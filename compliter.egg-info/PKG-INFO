@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: compliter
+Version: 0.1.0
+Summary: MiniLang compiler/interpreter (minimal)
+Author: Your Name
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
