@@ -5,57 +5,6 @@ from streamlit_ace import st_ace
 
 
 from polyworkbench.backends import BACKENDS
-import hashlib
-import streamlit as st
-
-def _key(lang, code):
-    """Hash key for caching."""
-    return hashlib.sha1((lang + "\x00" + code).encode()).hexdigest()
-
-# --- Cache tokenization ---
-@st.cache_data(show_spinner=False, max_entries=128)
-def cached_tokens(lang, code):
-    from polyworkbench.backends import BACKENDS
-    return BACKENDS[lang].tokens(code)
-
-# --- Cache AST ---
-@st.cache_data(show_spinner=False, max_entries=128)
-def cached_ast(lang, code):
-    if lang == "MiniLang":
-        from compliter.parser import Parser
-        from compliter.inspectors import ast_to_dict
-        prog = Parser(code).parse()
-        return ("minilang", ast_to_dict(prog))
-
-    elif lang == "Python":
-        import ast
-        tree = ast.parse(code, mode="exec")
-        return ("python", ast.dump(tree, indent=2))
-
-    elif lang == "JavaScript":
-        import esprima, json
-        ast_obj = esprima.parseScript(code, loc=True)
-        ast_dict = json.loads(json.dumps(ast_obj, default=lambda o: o.__dict__))
-        return ("js", ast_dict)
-
-    elif lang == "C":
-        from pycparser import c_parser
-        tree = c_parser.CParser().parse(code)
-        return ("c", str(tree))
-
-    return (lang, None)
-
-# --- Cache IR ---
-@st.cache_data(show_spinner=False, max_entries=128)
-def cached_ir(lang, code):
-    from polyworkbench.backends import BACKENDS
-    return BACKENDS[lang].ir(code)
-
-# --- Cache run ---
-@st.cache_data(show_spinner=False, max_entries=64)
-def cached_run(lang, code):
-    from polyworkbench.backends import BACKENDS
-    return BACKENDS[lang].run(code)
 
 # ---------- Session state init (must be BEFORE UI renders) ----------
 st.session_state.setdefault("ace_annotations", [])
@@ -136,7 +85,7 @@ with st.sidebar:
         min_lines=16,
         max_lines=32,
         annotations=st.session_state["ace_annotations"], 
-        auto_update=False,  
+        auto_update=True,  
         key=f"ace_{lang}",
     )
 
@@ -155,7 +104,7 @@ with tabs[TAB_TOKENS]:
     st.subheader("Tokens")
     st.session_state["ace_annotations"] = []  # clear previous errors
     try:
-        toks, t_tok = timeit(lambda: cached_tokens(lang, code))
+        toks, t_tok = timeit(lambda: b.tokens(code))
         perf["tokens_ms"] = t_tok
         st.dataframe(toks, hide_index=True, use_container_width=True)
         st.success("Tokenization OK.")
@@ -196,7 +145,7 @@ with tabs[TAB_AST]:
         elif lang == "Python":
             import ast
             from polyworkbench.viz import py_ast_graphviz
-            tree, t_parse = timeit(lambda: cached_ast(lang, code))
+            tree, t_parse = timeit(lambda: ast.parse(code, mode="exec"))
             perf["parse_ms"] = t_parse
             st.markdown("**AST — Graphviz**")
             st.graphviz_chart(py_ast_graphviz(tree).source)
@@ -241,7 +190,7 @@ with tabs[TAB_AST]:
 with tabs[TAB_IR]:
     st.subheader("IR / Bytecode")
     try:
-        ir, t_ir = timeit(lambda: cached_ir(lang, code))
+        ir, t_ir = timeit(lambda: b.ir(code))
         perf["ir_ms"] = t_ir
         if not ir:
             st.info("No IR for this language.")
@@ -312,7 +261,7 @@ with tabs[TAB_RUN]:
     st.subheader("Run")
     if do:
         try:
-            r, t_run = timeit(lambda: cached_run(lang, code))
+            r, t_run = timeit(lambda: b.run(code))
             perf["run_ms"] = t_run
             if not r.ok and r.stage_error:
                 st.error(f"Run failed: {r.stage_error}")
